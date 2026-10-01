@@ -1,209 +1,374 @@
 # Canonical Entity Resolution
 
-This repository contains a standalone Python package that turns raw text into
-typed, span-grounded entities. The caller supplies entity names and descriptions;
-the package does not assume a business domain, resolve catalog identifiers, or
-normalize input text.
+[繁體中文說明](README.zh-TW.md)
 
-The current M2 checkpoint completes the flat package layout and local commands.
-Model downloading is planned for M3 and is not part of this checkpoint. Runtime
-still requires host-provisioned artifacts and a `TYPESAFE_API_KEY`.
+This repository is a clone, customization, and run framework for canonical entity
+resolution. It extracts typed, span-grounded entities from raw text.
+The caller provides entity names and descriptions. CM/BM candidate probes use the
+descriptions; TypeSafe criteria use each label name and description plus the rejection
+choice. The package does not assume a business domain, resolve catalog identifiers,
+or normalize the caller's text.
 
-## Architecture
+The package includes flat packaging, explicit artifact provisioning, the CLI/API
+transports, and the retained CM/BM plus TypeSafe pipeline. Runtime never downloads
+models automatically. The TypeSafe live classification path needs a TYPESAFE_API_KEY;
+local Otter download, verification, loading, warmup, and candidate proposal have
+been verified on the pinned artifacts.
 
-```text
+## Architecture and boundaries
+
+~~~text
 raw text
   → pinned local CM/BM candidate proposal
-  → generic DecisionProvider classification
-  → confidence filtering and same-label containment selection
+  → schema-derived TypeSafe decision questions
+  → raw-probability confidence filtering and same-label containment NMS
   → gap recovery from the same decision pool
-  → annotation and surface/conflict resolution
+  → surface-preserving annotation and provenance/conflict projection
   → EntityResolutionResult
-```
+~~~
 
-`contracts/` contains the shared models and provider interfaces. `resolution/`
-contains selection, recovery, annotation, and entity projection rules. `runtime/`
-owns the facade, pipeline lifecycle, cache, admission, and telemetry. Otter and
-TypeSafe integrations live under `adapters/`; HTTP and CLI entry points live under
-`transport/`. `bootstrap.py` is the composition root.
+The root packages have one clear ownership boundary:
 
-The retained policy uses raw decision probabilities, a primary threshold of `0.90`,
-same-label containment suppression, and a second pass at `0.80` for candidates in
-eligible uncovered runs of at least two characters. Lexical operator cues protect
-recovery gaps; they do not infer application operators or preferences. Recovery
-performs no additional inference. The CM/BM candidate union keeps model scores
-separate, and the TypeSafe adapter selects one configured label per candidate.
+| Package | Responsibility |
+| --- | --- |
+| contracts | Immutable request/result/schema models and generic proposer/provider interfaces. |
+| resolution | Selection, recovery, annotation, provenance, and conflict rules. |
+| runtime | Resolver facade, lifecycle, readiness, cache, single-flight, admission, and telemetry. |
+| adapters/otter | Candidate model runtime, alignment, artifact validation, and provisioning. |
+| adapters/typesafe | TypeSafe wire construction, strict response validation, and provider lifecycle. |
+| transport | CLI and injected FastAPI application. |
+| bootstrap.py | Explicit production composition root. |
 
-## Installation
+The candidate adapter uses fixed CM and BM model assumptions. They are intentionally
+not an arbitrary plug-in model registry. The TypeSafe adapter is behind the generic
+DecisionProvider interface, and the API receives an injected resolver; the transport
+does not take ownership of service shutdown.
 
-Python 3.12 and 3.13 are supported. The core dependency is Pydantic; Otter, the
-TypeSafe adapter, and HTTP hosting are optional extras.
+The retained postprocessing policy uses raw decision probabilities. It keeps scores
+at or above 0.90, suppresses same-label contained spans with the frozen containment
+rule, then recovers candidates at or above 0.80 only inside eligible uncovered runs
+of at least two characters. Recovery reuses the same decision pool and performs no
+additional inference. Standalone lexical operator cues protect gaps; they do not
+infer application operators or preferences.
 
-```bash
-uv sync --group dev --extra api --extra otter --extra decision
+## First checkout and locked environment
+
+Python 3.12 and 3.13 are supported. The `otter` extra pins CPU wheels for Linux
+(`x86_64`/`aarch64`) and Windows (`AMD64`/`ARM64`); use a platform with a matching
+wheel for local candidate inference. The verification described below ran on Linux
+`x86_64`; the current extra does not pin a macOS torch wheel. From a fresh clone, create the environment,
+activate it, and then install the locked extras:
+
+~~~bash
+git clone https://github.com/Gratia2533/decision-entity-extractor.git
+cd decision-entity-extractor
+uv venv --python 3.13
 source .venv/bin/activate
-```
+uv sync --frozen --group dev --extra api --extra otter --extra decision
+~~~
 
-The package can also be built and installed from the checkout:
-
-```bash
-uv build
-pip install "dist/entity_resolution-2.0.0-py3-none-any.whl[api,otter,decision]"
-```
+Install uv using the [official installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 
 The extras are:
 
 | Extra | Purpose |
 | --- | --- |
-| `otter` | Pinned local CPU candidate-model runtime. |
-| `decision` | TypeSafe SDK `0.7.0` and its HTTP client. |
-| `api` | FastAPI and Uvicorn HTTP hosting. |
+| otter | Pinned local CPU candidate-model runtime. |
+| decision | TypeSafe SDK 0.7.0 and HTTP client. |
+| api | FastAPI and Uvicorn hosting. |
 
-Core imports do not load model weights, import optional ML/provider SDKs, download
-artifacts, or contact a provider. The `.env` file is not loaded automatically.
+The lock includes the runtime pins used by the candidate models: torch 2.9.1+cpu,
+transformers 4.56.2, tokenizers 0.22.2, numpy 2.5.2, huggingface-hub 0.36.2,
+and safetensors 0.8.0. The configured runtime loads CPU float32 models. No .env
+file is loaded automatically; export TYPESAFE_API_KEY explicitly when using the
+decision provider.
 
-## Entity schema
+Core imports do not load model weights, import optional ML/provider SDKs, contact
+the network, or create runtime workers. The TypeSafe key is not needed for
+identities, help, or download.
 
-Names and descriptions come from the caller. Names must be unique, nonblank, and
-free of surrounding whitespace or line breaks. The rejection choice must differ from
-every entity label, and schema order defines deterministic tie breaking.
+## Schema and label customization
 
-```python
+One EntitySchema supplies label descriptions to the CM/BM candidate probes, and label
+names plus descriptions to the TypeSafe criteria. Names must be unique, nonblank, and free of surrounding
+whitespace or line breaks. Descriptions must contain non-whitespace text. The
+rejection label must differ from every entity label, and schema order provides
+deterministic tie breaking.
+
+~~~python
 from contracts.models import EntityLabel, EntitySchema
 
 schema = EntitySchema(
     labels=(
+        EntityLabel(name="PERSON", description="A named person"),
         EntityLabel(name="ORGANIZATION", description="A named organization"),
         EntityLabel(name="PLACE", description="A named geographic place"),
     ),
     rejection_label="NOT_ENTITY_OR_MIXED",
 )
-```
+~~~
 
-The sample schema at `config/schema.example.json` uses neutral `PERSON`,
-`ORGANIZATION`, and `PLACE` labels. `runtime.config.load_schema` validates a JSON
-file with `EntitySchema`; changing a schema changes the decision prompt identity and
-requires a separately configured service.
+The neutral example is also in config/schema.example.json. Change the schema before
+constructing a service; the schema identity and TypeSafe prompt hash then change.
+The current CM/BM candidate architectures, revisions, and file allowlists remain
+fixed when labels change.
 
-## Pinned models and artifacts
+The equivalent JSON configuration is:
 
-The candidate adapter uses the fixed CM/BM Otter identities in `model_specs.py`:
+~~~json
+{
+  "labels": [
+    {"name": "PERSON", "description": "A named person"},
+    {"name": "ORGANIZATION", "description": "A named organization"},
+    {"name": "PLACE", "description": "A named geographic place"}
+  ],
+  "rejection_label": "NOT_ENTITY_OR_MIXED"
+}
+~~~
 
-| Key | Model | Revision | Threshold |
-| --- | --- | --- | ---: |
-| CM | `whoisjones/otter-cross-mmbert` | `8729188e4f5fc7948d0e9dfd7d7e6d36c2e7270d` | 0.04 |
-| BM | `whoisjones/otter-bi-mmbert` | `53e10a09bc71a2e45980a7a257233a28305a5777` | 0.05 |
+Each label requires a unique name and a non-whitespace description. The rejection
+label is used for non-entities, mixed labels, and broken boundaries; it cannot
+duplicate an entity label. Descriptions are sent to both candidate probes and TypeSafe
+criteria; label names and the rejection label are TypeSafe choices, not Otter probe
+text. A schema change requires a new service composition so its prompt and schema
+identities remain explicit.
 
-Both use the pinned `mmBERT` runtime configuration. BM additionally requires the
-`jhu-clsp/mmBERT-base` tokenizer at revision
-`c5955035435e2bf121cde7f3c8863ef52ff35d82`.
+## Models, revisions, files, and integrity
 
-M2 does not download models. The host must provision manifests and files below the
-paths derived from the model IDs and revisions, then use `check` for full byte-level
-verification:
+The candidate runtime uses these exact Apache-2.0 checkpoints:
 
-```text
-<artifact-root>/whoisjones--otter-cross-mmbert/<CM revision>/manifest.json
-<artifact-root>/whoisjones--otter-bi-mmbert/<BM revision>/manifest.json
-```
+| Key | Architecture | Model | Revision | Weight size | Weight SHA-256 | Threshold |
+| --- | --- | --- | --- | ---: | --- | ---: |
+| CM | cross encoder | whoisjones/otter-cross-mmbert | 8729188e4f5fc7948d0e9dfd7d7e6d36c2e7270d | 1,235,084,300 bytes | 8987080bfc3e6672a75fb19ffe904d39e79ad804eabfda8247a62c347fb024b2 | 0.04 |
+| BM | bi encoder | whoisjones/otter-bi-mmbert | 53e10a09bc71a2e45980a7a257233a28305a5777 | 1,906,302,124 bytes | 05c4f718fb9e5871d66b8eb68fc40e17d0d8611c5b8e6252e371662bc0f78c91 | 0.05 |
 
-The artifact validator checks the frozen identities, required remote-code/config and
-weight hashes, tokenizer files, regular-file boundaries, and manifest inventory. It
-rejects symlinks and mismatched files. Runtime does not auto-download or replace an
-artifact. `entity-resolver identities` needs no API key or weights; `check` requires
-the local artifact tree.
+Both use mmBERT and require max sequence length 1024 and max span length 30.
+BM additionally uses jhu-clsp/mmBERT-base tokenizer revision
+c5955035435e2bf121cde7f3c8863ef52ff35d82. Its required tokenizer files are:
 
-The service also requires `TYPESAFE_API_KEY` in the host environment. This checkpoint
-has no live provider or model-inference evidence because credentials and artifacts are
-not included in the repository.
+| File | Size | SHA-256 |
+| --- | ---: | --- |
+| runtime_tokenizer/special_tokens_map.json | 636 | baec30ea10906f16adb8c18af7a34023002c1746542612b8b41c9f09e1351351 |
+| runtime_tokenizer/tokenizer.json | 17,525,329 | 197d4cc5406ee12cc50c8b5511f2393cc32d9db321545979ce041c1199178356 |
+| runtime_tokenizer/tokenizer_config.json | 46,440 | 1d2f82c1341a79748e00efe82e67690f99d00b3c2a894f2b23128fd9d3519da3 |
+
+Each checkpoint also requires the six pinned remote-code files:
+collate_fn.py, configuration_otter.py, loss.py, masks.py, metrics.py, and
+modeling_otter.py; config.json; model.safetensors; and token_encoder_config.json.
+CM additionally requires tokenizer.json, tokenizer_config.json, and
+special_tokens_map.json. BM requires type_encoder_config.json plus
+token_tokenizer/tokenizer.json, token_tokenizer/tokenizer_config.json,
+type_tokenizer/tokenizer.json, and type_tokenizer/tokenizer_config.json. The
+provisioner copies only these allowlisted regular files and writes a manifest after
+full validation.
+
+The combined weight bytes are about 3.14 GB; that is not a minimum RAM claim.
+Startup checks manifest identity, required files, sizes, tokenizer metadata,
+regular-file boundaries, and symlink rules. Startup trusts declared weight identity
+and reports TRUSTED_SOURCE_NOT_HASHED; the explicit check command hashes current
+bytes with FULL_SHA256.
+
+## Download and verify
+
+Provisioning uses the existing huggingface_hub cache and resume behavior. It stages
+files outside the final checkpoint directory, copies Hub symlink targets as regular
+files, validates the complete manifest, and publishes only after validation:
+
+~~~bash
+entity-resolver identities
+entity-resolver download --artifact-root .local-artifacts
+entity-resolver check --artifact-root .local-artifacts
+~~~
+
+The final paths are derived from model IDs and revisions:
+
+~~~text
+.local-artifacts/whoisjones--otter-cross-mmbert/8729188e4f5fc7948d0e9dfd7d7e6d36c2e7270d/
+.local-artifacts/whoisjones--otter-bi-mmbert/53e10a09bc71a2e45980a7a257233a28305a5777/
+~~~
+
+The command reuses a healthy target without downloading. An existing damaged target
+is reported and preserved; it is never silently replaced. A failed or interrupted
+staging operation does not publish a valid final manifest and leaves the Hub cache
+untouched. A later BM failure can leave an already completed CM target reusable.
+There is no bespoke cross-process download lock.
+
+Provisioning and Otter inference use local artifact files. During a real decision
+request, the raw text, candidate spans, schema criteria, and bounded context are
+sent to TypeSafe; credentials and raw provider bodies are not written to public
+metadata or completion telemetry. Do not send sensitive text unless that transfer
+is acceptable for your deployment.
 
 ## CLI
 
-The installed command is `entity-resolver` and can also be run as
-`python -m transport.cli` from the checkout.
+The installed console script is entity-resolver. Help and identities do not require
+artifacts or a TypeSafe key:
 
-```bash
+~~~bash
 entity-resolver --help
 entity-resolver identities
-entity-resolver check --artifact-root .local-artifacts
-entity-resolver resolve --artifact-root .local-artifacts \
-  --schema config/schema.example.json \
-  --text "Alice visited Taipei."
-entity-resolver serve --artifact-root .local-artifacts \
-  --schema config/schema.example.json --host 127.0.0.1 --port 8000
-```
+~~~
 
-`resolve` writes result JSON to stdout. Invalid configuration and runtime
-failures write safe typed JSON to stderr and return a nonzero exit status. `serve`
-uses loopback and one worker by default; it does not enable reload or multiple
-workers, and closes the service on exit. `examples/resolve.py` demonstrates injected
-CM/BM and TypeSafe composition:
+After provisioning and exporting the TypeSafe key, resolve text or start the
+single-worker loopback server:
 
-```bash
-python -m examples.resolve --artifact-root .local-artifacts \
-  --schema config/schema.example.json --text "Alice visited Taipei."
-```
+~~~bash
+export TYPESAFE_API_KEY="..."
+entity-resolver resolve --artifact-root .local-artifacts --schema config/schema.example.json --text "Alice works at Acme in Taipei."
+entity-resolver serve --artifact-root .local-artifacts --schema config/schema.example.json --host 127.0.0.1 --port 8000
+~~~
 
-## Python and HTTP APIs
+resolve emits JSON on stdout. Invalid schemas, missing artifacts, configuration
+errors, provider failures, and timeouts produce safe JSON on stderr and a nonzero
+exit status. serve uses host 127.0.0.1, port 8000, one worker, no reload, and
+finally-closes the service.
 
-The caller owns the service and must close it:
+## Python API and HTTP
 
-```python
+The caller owns and closes the resolver:
+
+~~~python
 from pathlib import Path
 
 from bootstrap import build_production_service
-from contracts.models import EntitySchema, ResolveRequest
+from contracts.models import ResolveRequest
 from runtime.config import load_schema
 
-schema: EntitySchema = load_schema(Path("config/schema.example.json"))
+schema = load_schema(Path("config/schema.example.json"))
 service = build_production_service(
     artifact_root_path=Path(".local-artifacts"),
     schema=schema,
 )
 try:
-    result = service.resolve(ResolveRequest(text="Alice visited Taipei."))
+    result = service.resolve(ResolveRequest(text="Alice works at Acme in Taipei."))
     print(result.model_dump(mode="json"))
 finally:
     service.close()
-```
+~~~
 
-`bootstrap.build_service(pipeline)` accepts an explicitly composed
-`runtime.pipeline.PipelineService`; this is the test and integration seam. Requests
-contain only nonblank `text` and reject unknown fields. Spans use zero-based,
-end-exclusive Python character offsets, and every mention equals `text[start:end]`.
-Results contain the original text, ordered entities, warnings, schema and policy
-identities, source provenance, and timings. Empty selections carry
-`NO_ENTITY_EVIDENCE`; a label disagreement is represented as `CONFLICTED` metadata.
+For an explicitly injected test or integration composition, use
+bootstrap.build_service with a runtime.pipeline.PipelineService. The checkout example
+is runnable as:
 
-The optional HTTP transport is created with an injected resolver:
+~~~bash
+python -m examples.resolve --artifact-root .local-artifacts --schema config/schema.example.json --text "Alice works at Acme in Taipei."
+~~~
 
-```python
+HTTP hosting is an injected FastAPI app. Create a fresh service for the server
+process; the resolver in the preceding example has already been closed:
+
+~~~python
 import uvicorn
-
+from pathlib import Path
+from bootstrap import build_production_service
 from transport.api import create_app
+from runtime.config import load_schema
 
+service = build_production_service(
+    artifact_root_path=Path(".local-artifacts"),
+    schema=load_schema(Path("config/schema.example.json")),
+)
 try:
     uvicorn.run(create_app(service), host="127.0.0.1", port=8000, workers=1)
 finally:
     service.close()
-```
+~~~
 
-It exposes `POST /resolve`, `GET /health/ready`, and FastAPI's `/docs`. Input
-validation returns HTTP 422; readiness and configuration failures return 503;
-candidate/provider failures return 502 or 504 according to the typed error.
-Creating the app does not transfer service ownership.
+Readiness and a request can be checked with:
 
-## Runtime behavior and checks
+~~~bash
+curl -sS http://127.0.0.1:8000/health/ready
+curl -sS -X POST http://127.0.0.1:8000/resolve -H 'content-type: application/json' -d '{"text":"Alice works at Acme in Taipei."}'
+~~~
 
-The production composition retains a service-local success cache with 128 entries
-per stage and a 60-second TTL, in-flight single-flight sharing for equivalent
-decision requests, admission for eight active and sixteen waiting requests, and
-idempotent shutdown. Failed decisions are not cached, and cancelling an async caller
+The API exposes POST /resolve, GET /health/ready, and /docs. Input validation is
+HTTP 422. Readiness, admission, and provider configuration errors are HTTP 503;
+candidate/provider failures are HTTP 502; provider timeouts are HTTP 504.
+
+## Output contract and limitations
+
+Entity spans are zero-based and end-exclusive character offsets. mention is the
+exact source slice text[start:end]. normalized is the surface annotation used by
+the resolver; this package does not ground it to a catalog identifier. confidence
+is the original TypeSafe decision probability. sources retain CM/BM candidate
+evidence and the decision-provider evidence. A same-span disagreement can be
+represented as CONFLICTED with label hypotheses; empty output includes the
+NO_ENTITY_EVIDENCE warning. Metadata records schema, policy, decoder, model/artifact,
+provider, prompt, and timing identities.
+
+An illustrative result is:
+
+~~~json
+{
+  "schema_version": "entity-resolution-v1",
+  "text": "Alice works at Acme in Taipei.",
+  "entities": [{
+    "id": "e1",
+    "mention": "Acme",
+    "label": "ORGANIZATION",
+    "normalized": "Acme",
+    "span": {"start": 15, "end": 19},
+    "confidence": 0.97,
+    "sources": [
+      {"source": "CANDIDATE_MODEL", "source_id": "CM", "confidence": 0.20},
+      {"source": "DECISION_PROVIDER", "source_id": "typesafe", "confidence": 0.97}
+    ],
+    "resolution_status": "EXTRACTED",
+    "conflict": null
+  }],
+  "warnings": [],
+  "metadata": {
+    "policy_id": "CONFIDENCE_90_GAP_80",
+    "schema_id": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}
+~~~
+
+The runtime cache has 128 entries per stage and a 60-second TTL. Equivalent
+decision requests share in-flight work; admission allows eight active and sixteen
+waiting requests. Failed decisions are not cached, and cancelling an async caller
 does not cancel shared work.
 
-Run the repository checks with the project environment activated:
+## Customization map and fixed limits
 
-```bash
+Customize labels and descriptions in the JSON schema, then provision the same fixed
+CM/BM checkpoints. Replace the generic CandidateProposer or DecisionProvider only
+through the contracts interfaces and an explicitly injected PipelineService; the
+current artifact and model contracts are not a general model registry. The service
+expects nonblank text, limits candidates to 64, sends at most 16 TypeSafe questions
+per request, and applies 30,000-byte state/question and 60,000-byte request limits.
+Each CM/BM candidate probe is bounded by a 1024-token input sequence and a 30-token
+span. The TypeSafe side sends at most 16 questions per request, with 30,000-byte
+state/question and 60,000-byte request budgets.
+
+The main customization files are config/schema.example.json for labels and
+descriptions, model_specs.py for immutable pins, adapters/otter for artifact/model
+integration, adapters/typesafe/wire.py for provider request/response contracts,
+resolution for selection/recovery policy, and bootstrap.py for composition.
+
+Changing fixed pins or policy contracts requires corresponding tests and a new
+review iteration.
+
+## Troubleshooting
+
+- If download reports a damaged target, move it aside and retry; silent replacement
+  is intentionally refused.
+- If check fails, inspect the model key, revision, manifest, file sizes, and SHA-256
+  values. Startup may report TRUSTED_SOURCE_NOT_HASHED; check is the FULL_SHA256 path.
+- If resolve or serve reports DECISION_CONFIGURATION_ERROR, export TYPESAFE_API_KEY
+  and install the decision extra. A key is never loaded from .env automatically.
+- If the CLI reports MISSING_DEPENDENCY or INVALID_CONFIGURATION, install the matching
+  `api`, `otter`, or `decision` extra and check the schema/artifact-root arguments.
+- If input exceeds the configured runtime limit, the safe code is QUERY_TOO_LONG
+  (HTTP 422); shorten the text before retrying.
+- If the provider times out or is unavailable, verify network access and use the safe
+  typed error code. Raw provider responses are deliberately hidden.
+- If the service is not ready, validate both artifacts and confirm the CPU runtime
+  extras can load the pinned checkpoints.
+
+## Developer checks and evidence
+
+~~~bash
 source .venv/bin/activate
 uv run pytest
 uv run ruff check .
@@ -211,11 +376,21 @@ uv run ruff format --check .
 uv lock --check
 uv build
 git diff --check
-```
+~~~
 
-The approved M2 checkpoint passes 103 tests, Ruff check/format validation, lock
-validation, wheel and sdist builds, installed-wheel core/import smoke checks, and
-whitespace checks. The delegated review covered all 61 reviewable files; four
-unsupported files were manually checked. Live TypeSafe/Otter inference remains
-unverified until credentials and artifacts are available. The M3 downloader and the
-full bilingual tutorial are intentionally deferred.
+The repository checks cover resolver contracts, artifact trust boundaries,
+provisioning failure paths, lifecycle, CLI/API behavior, packaging, and import-time
+side effects.
+
+Real local evidence: download produced 12 CM files and 17 BM files with FULL_SHA256;
+check and repeat-download reuse passed. With HF_HUB_OFFLINE=1 and
+TRANSFORMERS_OFFLINE=1, both pinned Otter models loaded, warmed, proposed four
+candidates, and closed cleanly. A live CLI resolve also completed with TypeSafe
+model `jev-1.13.0`: the sample returned Alice PERSON [0, 5), Acme ORGANIZATION
+[15, 19), and Taipei PLACE [23, 29) with no warnings. The ignored local `.env` was
+loaded by the test harness only; the framework itself never loads `.env` automatically.
+An injected FastAPI `TestClient` also returned readiness 200, the same English result,
+the Chinese result `王小明在台北的台積電工作。` with 王小明 PERSON [0, 3), 台北
+PLACE [4, 6), and 台積電 ORGANIZATION [7, 10), an empty `....` result with
+`NO_ENTITY_EVIDENCE`, and HTTP 422 for a blank request. These are local validation
+results, not a production-readiness guarantee.
