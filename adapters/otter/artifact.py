@@ -61,7 +61,8 @@ class ArtifactManifest(BaseModel):
     artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-def _safe(path: Path) -> Path:
+def safe_artifact_path(path: Path) -> Path:
+    """Return an absolute artifact path with no symlinks in its ancestry."""
     path = Path(os.path.abspath(path))
     if any(p.is_symlink() for p in (path, *path.parents)):
         raise ArtifactError("artifact symlinks are forbidden")
@@ -79,7 +80,7 @@ def _digest(path: Path) -> str:
 def _inventory(root: Path) -> tuple[ArtifactFile, ...]:
     records = []
     for path in sorted(root.rglob("*")):
-        _safe(path)
+        safe_artifact_path(path)
         mode = path.lstat().st_mode
         if stat.S_ISDIR(mode):
             continue
@@ -155,7 +156,7 @@ def _check_pins(root: Path, manifest: ArtifactManifest) -> None:
 
 def build_manifest(root: Path, model_key: str) -> ArtifactManifest:
     """Host provisioning helper: hash existing files; never download or modify model files."""
-    root = _safe(root)
+    root = safe_artifact_path(root)
     if not root.is_dir():
         raise ArtifactError("artifact directory unavailable")
     identity = MODELS[model_key]
@@ -174,8 +175,8 @@ def build_manifest(root: Path, model_key: str) -> ArtifactManifest:
 
 
 def validate_artifact(artifact_root: Path, model_key: str) -> tuple[Path, dict]:
-    root = _safe(artifact_path(artifact_root, model_key))
-    path = _safe(root / "manifest.json")
+    root = safe_artifact_path(artifact_path(artifact_root, model_key))
+    path = safe_artifact_path(root / "manifest.json")
     if not path.is_file() or not stat.S_ISREG(path.stat().st_mode):
         raise ArtifactError("local artifact manifest is required")
     manifest = ArtifactManifest.model_validate_json(path.read_bytes())
@@ -200,8 +201,8 @@ def inspect_trusted_artifact(artifact_root: Path, model_key: str) -> tuple[Path,
     Manifest digests are declared identity only. The explicit CLI verifier remains
     available when a consumer needs cryptographic verification of current file bytes.
     """
-    root = _safe(artifact_path(artifact_root, model_key))
-    path = _safe(root / "manifest.json")
+    root = safe_artifact_path(artifact_path(artifact_root, model_key))
+    path = safe_artifact_path(root / "manifest.json")
     if not path.is_file() or not stat.S_ISREG(path.stat().st_mode):
         raise ArtifactError("local artifact manifest is required")
     manifest = ArtifactManifest.model_validate_json(path.read_bytes())
@@ -209,7 +210,7 @@ def inspect_trusted_artifact(artifact_root: Path, model_key: str) -> tuple[Path,
         raise ArtifactError("artifact model key mismatch")
     actual = {}
     for item in root.rglob("*"):
-        _safe(item)
+        safe_artifact_path(item)
         info = item.stat()
         if stat.S_ISDIR(info.st_mode) or item == path:
             continue

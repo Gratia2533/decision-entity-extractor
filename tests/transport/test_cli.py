@@ -116,3 +116,17 @@ def test_sample_schema():
         "ORGANIZATION",
         "PLACE",
     )
+
+
+def test_download_default_no_service(monkeypatch, capsys):
+    from pathlib import Path
+
+    calls = []
+    monkeypatch.setattr(cli, "build_production_service", lambda **_: pytest.fail("built"))
+    monkeypatch.setattr(
+        "adapters.otter.provisioning.download_artifacts",
+        lambda root: calls.append(root) or {"verified": True},
+    )
+    assert cli.main(["download"]) == 0
+    assert calls == [Path(".local-artifacts")]
+    assert json.loads(capsys.readouterr().out) == {"verified": True}

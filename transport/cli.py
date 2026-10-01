@@ -34,6 +34,8 @@ def _parser() -> argparse.ArgumentParser:
     subcommands.add_parser("identities", help="Print pinned model identities")
     check = subcommands.add_parser("check", help="Fully verify local artifact bytes")
     check.add_argument("--artifact-root", type=Path, required=True)
+    download = subcommands.add_parser("download", help="Provision and verify pinned artifacts")
+    download.add_argument("--artifact-root", type=Path, default=Path(".local-artifacts"))
     for name in ("resolve", "serve"):
         command = subcommands.add_parser(name)
         command.add_argument("--artifact-root", type=Path, required=True)
@@ -51,6 +53,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "identities":
             output = {key: asdict(value) for key, value in MODELS.items()}
+        elif args.command == "download":
+            from adapters.otter.provisioning import download_artifacts
+
+            output = download_artifacts(args.artifact_root)
         elif args.command == "check":
             output = {key: validate_artifact(args.artifact_root, key)[1] for key in MODELS}
         else:
