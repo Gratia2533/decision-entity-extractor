@@ -77,6 +77,10 @@ uv run --no-sync entity-resolver resolve \
 ## 運作流程
 
 ```mermaid
+---
+config:
+  theme: dark
+---
 flowchart TB
     candidates["1. 取得候選<br/>文字斷詞 → 候選擷取"]
     decision["2. 分類與評分<br/>Decision model<br/>判定類別與信心分數"]

@@ -78,6 +78,10 @@ uv run --no-sync entity-resolver resolve \
 ## How it works
 
 ```mermaid
+---
+config:
+  theme: dark
+---
 flowchart TB
     candidates["1. Propose candidates<br/>Text → tokens → spans"]
     decision["2. Classify and score<br/>Decision model<br/>Labels and confidence"]
