@@ -1,0 +1,8 @@
+{
+  "labels": [
+    {"name": "PERSON", "description": "A named person"},
+    {"name": "ORGANIZATION", "description": "A named organization"},
+    {"name": "PLACE", "description": "A named geographic place"}
+  ],
+  "rejection_label": "NOT_ENTITY_OR_MIXED"
+}

@@ -1,0 +1,6 @@
+prune tests
+prune .code-review-graph
+prune .codex
+prune .agents
+global-exclude *.py[cod]
+global-exclude __pycache__
