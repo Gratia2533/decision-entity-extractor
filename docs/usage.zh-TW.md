@@ -51,6 +51,10 @@ manifest 與結果的來源資訊中：
 並非上游模型的預設預測門檻。後續[篩選與撈回](customization.zh-TW.md#篩選與撈回)
 使用的 0.90 與 0.80 門檻，則作用於 TypeSafe 回傳的決策機率。
 
+內建決策服務使用 TypeSafe 模型 `jev-1.13.0`，依照自訂實體類別判斷候選片段並回傳機率。
+模型識別值與回應驗證定義於 [adapters/typesafe/wire.py](../adapters/typesafe/wire.py)。
+此模型透過 TypeSafe API 呼叫；下列下載指令只準備本機 Otter 候選模型。
+
 ```bash
 uv run --no-sync entity-resolver identities
 uv run --no-sync entity-resolver download --artifact-root .local-artifacts
@@ -129,7 +133,7 @@ curl -sS -X POST http://127.0.0.1:8000/resolve \
 | `entities[].span` | 從 0 起算的字元位置，不包含 `end` |
 | `entities[].label` | 自訂的實體類別之一 |
 | `entities[].confidence` | 決策服務回傳的原始機率 |
-| `entities[].normalized` | 原文表面標註，不查詢資料目錄 ID |
+| `entities[].normalized` | 目前與 `mention` 相同，保留原文，不進行名稱標準化或資料目錄 ID 對應 |
 | `entities[].sources` | 候選與決策服務的來源證據 |
 | `entities[].resolution_status` / `conflict` | 擷取狀態與同一區間的類別衝突 |
 | `warnings` | 未找到實體時包含 `NO_ENTITY_EVIDENCE` |

@@ -21,7 +21,7 @@ JSON file with `--schema`:
 - Names must be unique and nonblank, without surrounding whitespace or line breaks.
 - Descriptions must contain non-whitespace text. Describe what qualifies for each type.
 - `rejection_label` covers non-entities, mixed labels and broken boundaries; it must differ from every entity name.
-- Candidate probes use descriptions. The decision model uses names, descriptions and the rejection choice. Schema order breaks score ties.
+- Candidate models receive each label's description as a type input, called a `probe` in the code. The decision model uses names, descriptions and the rejection choice. Schema order breaks score ties.
 - Rebuild the service after changing the schema so its schema and prompt identities update together.
 
 Python callers can construct `EntitySchema` and `EntityLabel` directly; see their
@@ -61,11 +61,11 @@ for the exact policy. Changes to these rules need corresponding tests.
 
 | Boundary | Current limit | Source |
 | --- | --- | --- |
-| Candidate input / span | 1,024 / 30 tokens per model probe | [Model specs](../model_specs.py) |
+| Candidate input / span | 1,024 tokens per model input sequence / 30 tokens per candidate span | [Model specs](../model_specs.py) |
 | Candidate pool | 64 candidates | [Pipeline contracts](../contracts/pipeline.py) |
 | Decision request | 16 questions; 30,000 bytes per state/question; 60,000 bytes per request | [Pipeline contracts](../contracts/pipeline.py) |
 | Admission | 8 active and 16 waiting requests | [Runtime config](../runtime/config.py) |
-| Cache | 128 entries per stage; 60-second TTL | [Runtime config](../runtime/config.py) |
+| Cache | 128 entries per stage; entries expire 60 seconds after successful completion (time to live, TTL) | [Runtime config](../runtime/config.py) |
 
 Text must be nonblank. Equivalent decision requests share in-flight work; failed
 decisions are not cached. Cancelling an async caller does not cancel shared work.

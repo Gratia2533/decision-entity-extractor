@@ -21,7 +21,7 @@
 - 名稱需唯一且非空白，前後不可有空白，也不可包含換行。
 - 描述需包含非空白內容，說明哪些實體符合該類別。
 - `rejection_label` 用於非實體、混合類別或邊界錯誤，不可與實體名稱重複。
-- 候選擷取使用描述；decision model 使用名稱、描述與拒絕選項。分數相同時依 schema 順序判定。
+- 候選模型以各類別的描述作為類別輸入，程式中稱為 `probe`；decision model 使用名稱、描述與拒絕選項。分數相同時依 schema 順序判定。
 - 修改 schema 後需重新建立服務，讓 schema 與提示詞的識別資訊一併更新。
 
 Python 呼叫端也可直接建立 `EntitySchema` 與 `EntityLabel`，詳見
@@ -60,11 +60,11 @@ NMS 為非極大值抑制（Non-Maximum Suppression）。候選依分數由高�
 
 | 邊界 | 目前上限 | 來源 |
 | --- | --- | --- |
-| 候選模型輸入／片段 | 每次模型探測 1,024／30 tokens | [模型規格](../model_specs.py) |
+| 候選模型輸入／片段 | 每個模型輸入序列 1,024 tokens／每個候選片段 30 tokens | [模型規格](../model_specs.py) |
 | 候選集合 | 64 個候選 | [流程資料規格](../contracts/pipeline.py) |
 | 決策請求 | 16 個問題；每份 state/question 30,000 bytes；每次 request 60,000 bytes | [流程資料規格](../contracts/pipeline.py) |
 | 請求容量 | 同時處理 8 個、等待 16 個 | [執行設定](../runtime/config.py) |
-| 快取 | 每階段 128 筆；TTL 60 秒 | [執行設定](../runtime/config.py) |
+| 快取 | 每階段 128 筆；成功完成後 60 秒到期（存活時間，Time to Live，TTL） | [執行設定](../runtime/config.py) |
 
 輸入文字不可為空白。相同的決策請求共用進行中的工作；失敗結果不會快取。
 取消非同步呼叫端不會取消共用工作。模型權重的下載大小不代表最低 RAM 需求。

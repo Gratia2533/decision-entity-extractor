@@ -55,6 +55,12 @@ candidate thresholds, not the upstream models' default prediction thresholds.
 The later [selection and recovery thresholds](customization.md#selection-and-recovery)
 of 0.90 and 0.80 apply to TypeSafe decision probabilities instead.
 
+The bundled decision provider uses TypeSafe model `jev-1.13.0` to classify candidate
+spans against your entity labels and return probabilities. Its model identifier and
+response validation are defined in [adapters/typesafe/wire.py](../adapters/typesafe/wire.py).
+This model runs through the TypeSafe API; the download commands below provision
+only the local Otter candidate models.
+
 ```bash
 uv run --no-sync entity-resolver identities
 uv run --no-sync entity-resolver download --artifact-root .local-artifacts
@@ -133,7 +139,7 @@ The full contract is [EntityResolutionResult](../contracts/models.py).
 | `entities[].span` | Zero-based character offsets; `end` is exclusive |
 | `entities[].label` | One of your configured entity types |
 | `entities[].confidence` | Original decision probability |
-| `entities[].normalized` | Surface annotation; no catalog ID lookup |
+| `entities[].normalized` | Currently identical to `mention`; preserves source text without name standardization or catalog ID lookup |
 | `entities[].sources` | Candidate and decision-provider evidence |
 | `entities[].resolution_status` / `conflict` | Extraction status and any same-span label disagreement |
 | `warnings` | Includes `NO_ENTITY_EVIDENCE` when no entities are found |

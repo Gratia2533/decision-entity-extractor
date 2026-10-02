@@ -31,7 +31,10 @@ artifact root
 
 The caller owns and closes the resolver. PipelineService owns startup readiness,
 one event-loop thread, worker lifecycle, bounded admission, success caches,
-single-flight sharing, cancellation shielding, and shutdown. Runtime does not
+single-flight sharing, cancellation shielding, and shutdown. Single-flight sharing
+lets equivalent decision requests await one in-progress task. Cancellation shielding
+allows that shared task to continue when an individual caller cancels its wait.
+Bounded admission limits the number of active and waiting requests. Runtime does not
 download artifacts automatically. `transport.cli download` is explicit provisioning;
 `resolve` and `serve` only load already published artifacts. `transport.cli` also owns
 the explicit check command; `transport.api` owns neither resolver creation nor shutdown.
@@ -46,7 +49,7 @@ the explicit check command; `transport.api` owns neither resolver creation nor s
 | contracts/pipeline.py | Candidate/decision snapshots and fixed request budgets. |
 | resolution/selection.py | Filter raw decision probabilities at 0.90 and suppress same-label contained spans. |
 | resolution/recovery.py | Recover candidates at 0.80 from existing decisions inside eligible uncovered intervals, respecting protected lexical cues. |
-| resolution/annotation.py | Surface annotation and normalized mention projection. |
+| resolution/annotation.py | Validate selected spans against the source text and copy each mention into the normalized field unchanged. |
 | resolution/entities.py | Final entities, provenance, exact-span conflicts, and output contract. |
 | runtime/resolver.py | Public resolver facade and result metadata projection. |
 | runtime/pipeline.py | Runtime lifecycle, readiness, cache, single-flight, admission, and orchestration. |
