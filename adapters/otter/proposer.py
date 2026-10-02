@@ -1,4 +1,4 @@
-"""Frozen CM@0.04 + BM@0.05 production candidate proposal."""
+"""Merge Otter cross-encoder (>= 0.04) and bi-encoder (>= 0.05) candidate spans."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def union_candidates(
                 query, item.start, item.end, item.score, mention=item.mention
             )
             if validated.score < MODEL_THRESHOLDS[model_key]:
-                raise ValueError(f"{model_key} returned a candidate below its frozen threshold")
+                raise ValueError(f"{model_key} returned a candidate below its configured threshold")
             boundary = (validated.start, validated.end)
             scores = by_boundary.setdefault(boundary, {})
             scores[model_key] = max(scores.get(model_key, float("-inf")), validated.score)

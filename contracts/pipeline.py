@@ -22,6 +22,8 @@ class FrozenModel(BaseModel):
 
 
 class CompareConfig(FrozenModel):
+    """Limits for classifying the combined Otter candidate pool."""
+
     schema_version: Literal["entity-decision-config-v1"] = "entity-decision-config-v1"
     policy_id: Literal["otter-union-decision-v1"] = "otter-union-decision-v1"
     max_candidates: Literal[64] = 64
@@ -33,6 +35,8 @@ class CompareConfig(FrozenModel):
 
 
 class ModelProvenance(FrozenModel):
+    # Stable model keys; full checkpoint identities are defined in model_specs.MODELS.
+    # CM identifies the Otter cross-encoder; BM identifies the Otter bi-encoder.
     provider_id: Literal["CM", "BM"]
     model_id: str
     revision: str
@@ -41,6 +45,8 @@ class ModelProvenance(FrozenModel):
 
 
 class CompareCandidate(FrozenModel):
+    """One source-text span proposed by either or both candidate models."""
+
     candidate_id: str = Field(pattern=r"^s[0-9]{3,}$")
     start: Index
     end: Index
@@ -49,6 +55,8 @@ class CompareCandidate(FrozenModel):
 
 
 class CompareSnapshot(FrozenModel):
+    """Validated input text, schema, and candidate pool sent for decision scoring."""
+
     schema_version: Literal["entity-candidate-snapshot-v1"] = "entity-candidate-snapshot-v1"
     case_id: str = Field(pattern=r"^q[0-9]{3}$")
     raw_text: str = Field(min_length=1)
@@ -135,6 +143,8 @@ def accepted_predictions(
 
 
 class CompareResult(FrozenModel):
+    """Complete provider decisions and accepted predictions for one candidate snapshot."""
+
     schema_version: Literal["entity-decision-result-v1"] = "entity-decision-result-v1"
     case_id: str
     source_response_hash: str = Field(pattern=r"^[0-9a-f]{64}$")

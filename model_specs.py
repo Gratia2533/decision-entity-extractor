@@ -1,4 +1,4 @@
-"""Production runtime identities and scenario-neutral policy constants."""
+"""Pinned model identities, candidate thresholds, and runtime versions."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 PARALLEL_INTRAOP_THREADS = frozenset({1, 2, 4, 8})
+# Decoder identity: exclude invalid spans before applying an inclusive >= threshold;
+# retain overlapping candidates for later decision scoring and containment NMS.
 DECODER_VERSION = "local-mask-first-ge-unsuppressed-v1"
 BM_TOKENIZER_MODEL = "jhu-clsp/mmBERT-base"
 BM_TOKENIZER_REVISION = "c5955035435e2bf121cde7f3c8863ef52ff35d82"
@@ -32,6 +34,9 @@ BM_TOKENIZER_FILES = {
     ),
 }
 
+# Stable source keys: CM = whoisjones/otter-cross-mmbert (cross-encoder),
+# BM = whoisjones/otter-bi-mmbert (bi-encoder). These keys also appear in manifests
+# and result provenance. Thresholds apply to candidate scores, not decision scores.
 MODEL_THRESHOLDS = {"CM": 0.04, "BM": 0.05}
 
 

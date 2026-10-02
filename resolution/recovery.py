@@ -1,4 +1,4 @@
-"""Frozen, local two-pass selection over one complete decision pool."""
+"""Select confident entities, then recover uncovered spans using existing scores."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from resolution.selection import (
     containment_nms,
 )
 
+# Primary selection: decision probability >= 0.90, then same-label containment NMS.
+# CN90 is the stable serialized policy ID documented in selection.SETTINGS.
 CN90 = PostprocessConfig(policy_id="CN90", confidence_tau=0.90, min_score_gap=0.0)
 OPERATOR_RULE_VERSION = "standalone-operator-cues-v1"
 OPERATOR_CUES = ("不要", "排除", "不含", "不是", "除了", "或者", "以及", "或", "和", "且", "非")
@@ -26,6 +28,8 @@ _OPERATOR = re.compile(r"(?<!\w)(?:" + "|".join(OPERATOR_CUES) + r")(?!\w)")
 
 
 class RecoveryConfig(FrozenModel):
+    # Stable identity for primary selection at 0.90 and same-pool gap recovery at
+    # 0.80, followed by containment NMS. Included in serialized config/result hashes.
     policy_id: Literal["CN90_GAP80_V1"] = "CN90_GAP80_V1"
     primary_threshold: Literal[0.90] = 0.90
     recovery_threshold: Literal[0.80] = 0.80
@@ -169,6 +173,7 @@ class RecoveryResult(FrozenModel):
     schema_version: Literal["entity-gap-recovery-v1"] = "entity-gap-recovery-v1"
     config: RecoveryConfig
     source: CompareResult
+    # First-pass confidence filtering and containment NMS, before gap recovery.
     baseline: PostprocessResult
     source_snapshot_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     classification_result_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -193,7 +198,7 @@ class RecoveryResult(FrozenModel):
             raise ValueError("classification identity mismatch")
         expected_baseline = apply_policy(self.source, CN90)
         if self.baseline != expected_baseline:
-            raise ValueError("baseline must exactly reproduce CN90")
+            raise ValueError("baseline must match primary confidence and containment selection")
         if self.baseline_result_hash != content_sha256(self.baseline.model_dump(mode="json")):
             raise ValueError("baseline identity mismatch")
         for key, expected in _selection(self.source, self.baseline, self.config).items():
@@ -211,7 +216,10 @@ def recover_gaps(
     *,
     baseline: PostprocessResult | None = None,
 ) -> RecoveryResult:
-    """Reuse accepted scores and CN90; never accepts gold, a client, or partial responses."""
+    """Recover eligible uncovered spans from complete decisions without additional inference.
+
+    An optional baseline must match the first-pass confidence and containment selection.
+    """
     # Revalidation rejects model_construct/model_copy bypasses at the selection boundary.
     result = CompareResult.model_validate_json(result.model_dump_json())
     baseline = apply_policy(result, CN90) if baseline is None else baseline
@@ -226,4 +234,6 @@ def recover_gaps(
     )
 
 
+# Public result/telemetry identity for the same 0.90 primary / 0.80 recovery policy.
+# Keep this value stable independently of the internal recovery-config identifier.
 POLICY_ID = "CONFIDENCE_90_GAP_80"

@@ -10,6 +10,9 @@ from pydantic import Field, model_validator
 from contracts.pipeline import AcceptedPrediction, CompareResult, FrozenModel, Probability
 from hashing import content_sha256
 
+# CN90 identifies confidence >= 0.90 followed by same-label containment NMS
+# (non-maximum suppression), with a minimum score difference of 0.0.
+# Keep the identifier stable: it is serialized and included in config/result hashes.
 SETTINGS = (("CN90", 0.90, 0.0),)
 
 
@@ -22,7 +25,7 @@ class PostprocessConfig(FrozenModel):
     @model_validator(mode="after")
     def check_setting(self) -> Self:
         if (self.policy_id, self.confidence_tau, self.min_score_gap) not in SETTINGS:
-            raise ValueError("unfrozen postprocessing setting")
+            raise ValueError("unsupported selection policy or threshold combination")
         return self
 
     @property
@@ -44,6 +47,7 @@ class SuppressionDecision(FrozenModel):
     loser_score: Probability
     score_gap: float = Field(ge=0, allow_inf_nan=False)
     direction: Literal["WINNER_CONTAINS_LOSER", "LOSER_CONTAINS_WINNER"]
+    # Intersection over union is recorded for tracing, not used as an NMS threshold.
     iou: float = Field(ge=0, le=1, allow_inf_nan=False)
     reason: Literal["SAME_TYPE_CONTAINMENT"] = "SAME_TYPE_CONTAINMENT"
 
@@ -99,7 +103,7 @@ class PostprocessResult(FrozenModel):
             d.tau != self.config.confidence_tau or d.score != before[d.candidate_id].confidence
             for d in self.confidence_decisions
         ):
-            raise ValueError("confidence trace differs from frozen scores or policy")
+            raise ValueError("confidence trace differs from input scores or configured threshold")
         for decision in self.suppression_decisions:
             winner, loser = before[decision.winner_id], before[decision.loser_id]
             if winner.label != loser.label or not _contains(winner, loser):
@@ -110,7 +114,7 @@ class PostprocessResult(FrozenModel):
                 or decision.score_gap != winner.confidence - loser.confidence
                 or decision.iou != _iou(winner, loser)
             ):
-                raise ValueError("suppression trace differs from frozen spans/scores")
+                raise ValueError("suppression trace differs from input spans or scores")
             expected_direction = (
                 "WINNER_CONTAINS_LOSER"
                 if winner.start <= loser.start and loser.end <= winner.end
@@ -119,7 +123,7 @@ class PostprocessResult(FrozenModel):
             if decision.direction != expected_direction:
                 raise ValueError("suppression direction differs from geometry")
             if self.config.min_score_gap is None or decision.score_gap < self.config.min_score_gap:
-                raise ValueError("suppression does not satisfy frozen score margin")
+                raise ValueError("suppression does not satisfy configured score margin")
         if len(before) != len(after) + len(confidence_ids) + len(loser_ids):
             raise ValueError("postprocessing count conservation failed")
         return self
@@ -164,6 +168,7 @@ def containment_nms(
     predictions: tuple[AcceptedPrediction, ...],
     min_score_gap: float | None,
 ) -> tuple[tuple[AcceptedPrediction, ...], tuple[SuppressionDecision, ...]]:
+    """Suppress same-label containment by score; ties use start, end, then candidate ID."""
     if min_score_gap is None:
         return predictions, ()
     groups: dict[str, list[AcceptedPrediction]] = defaultdict(list)
@@ -213,7 +218,7 @@ def containment_nms(
 
 
 def apply_policy(result: CompareResult, config: PostprocessConfig) -> PostprocessResult:
-    """No gold, model, API or source adapter enters this selection boundary."""
+    """Filter accepted predictions by confidence, then suppress same-label containment."""
     after_confidence, decisions = confidence_gate(
         result.accepted_predictions, config.confidence_tau
     )
