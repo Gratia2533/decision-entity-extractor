@@ -1,7 +1,7 @@
 <p align="center">
   <img src="docs/assets/entity-raccoon.png" width="180" alt="浣熊從文字紙帶抽出金色片段">
 </p>
-<h1 align="center">decision-entity-extractor</h1>
+<h1 align="center">Decision Entity Extractor</h1>
 <p align="center">擷取你定義的實體，保留它在原文中的位置。</p>
 <p align="center">
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB?style=flat" alt="Python 3.12 | 3.13"></a>
@@ -30,7 +30,7 @@ Alice works at Acme in Taipei.
 
 - 以自訂名稱與描述定義實體類別。
 - 先擷取候選片段，再由 decision model 分類。
-- 依信心分數篩選，以 NMS 抑制包含片段，再從空缺撈回候選。
+- 依信心分數篩選，以非極大值抑制（Non-Maximum Suppression，NMS）抑制包含片段，再從空缺撈回候選。
 - 透過 CLI、Python 或 HTTP 使用同一套 resolver。
 
 ## 快速開始
@@ -92,6 +92,9 @@ flowchart TB
 
 - 自訂 schema 用來引導候選擷取與分類。
 - NMS 抑制同類別的包含片段。空缺撈回沿用已有分數，以較低門檻選回候選後再次套用 NMS，不額外呼叫模型。
+
+門檻與同分處理方式請見[篩選與撈回規則](docs/customization.zh-TW.md#篩選與撈回)；
+內建候選模型請見[模型檔案](docs/usage.zh-TW.md#模型檔案)。
 
 ## 延伸文件
 

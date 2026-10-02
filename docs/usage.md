@@ -40,6 +40,21 @@ excluded from public result metadata and completion telemetry.
 
 ## Model files
 
+The bundled candidate models are Otter multilingual entity recognizers. Their
+stable source keys appear in CLI output, manifests, and result provenance:
+
+| Source key | Model | Architecture | Candidate score threshold |
+| --- | --- | --- | --- |
+| `CM` | [whoisjones/otter-cross-mmbert](https://huggingface.co/whoisjones/otter-cross-mmbert) | Cross-encoder: encodes type descriptions and text together | ≥ 0.04 |
+| `BM` | [whoisjones/otter-bi-mmbert](https://huggingface.co/whoisjones/otter-bi-mmbert) | Bi-encoder: encodes text and type descriptions separately | ≥ 0.05 |
+
+Both models use an mmBERT text encoder. This adapter supplies your schema's label
+descriptions as the model's type inputs and merges candidates with identical
+character boundaries, preserving each model's score. These are this project's
+candidate thresholds, not the upstream models' default prediction thresholds.
+The later [selection and recovery thresholds](customization.md#selection-and-recovery)
+of 0.90 and 0.80 apply to TypeSafe decision probabilities instead.
+
 ```bash
 uv run --no-sync entity-resolver identities
 uv run --no-sync entity-resolver download --artifact-root .local-artifacts
@@ -123,6 +138,11 @@ The full contract is [EntityResolutionResult](../contracts/models.py).
 | `entities[].resolution_status` / `conflict` | Extraction status and any same-span label disagreement |
 | `warnings` | Includes `NO_ENTITY_EVIDENCE` when no entities are found |
 | `metadata` | Schema, policy, model, prompt and timing information |
+
+`metadata.policy_id` is `CONFIDENCE_90_GAP_80`: primary selection at 0.90 followed
+by eligible-gap recovery at 0.80, with same-label containment NMS. This is a stable
+machine identifier; the full rules are in the customization guide. Candidate
+`source_id` values `CM` and `BM` refer to the models listed above.
 
 CLI results go to stdout. Failures produce JSON on stderr and a nonzero exit status.
 

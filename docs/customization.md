@@ -34,13 +34,25 @@ The README shows the conceptual flow. The current policy applies these rules:
 | Step | Rule |
 | --- | --- |
 | Confidence filter | Keep accepted predictions with raw decision probability ≥ 0.90. |
-| Containment NMS | Suppress same-label contained spans when the score-margin rule is met. |
-| Gap recovery | Select candidates scoring ≥ 0.80 inside eligible uncovered runs of at least two characters. |
+| Containment NMS | Within each label, a retained span suppresses another when either fully contains the other and the retained score is at least as high (minimum difference 0.0). |
+| Gap recovery | Select accepted candidates scoring ≥ 0.80 fully inside eligible uncovered runs of at least two characters. |
 | Final selection | Apply NMS to recovered candidates and merge them with primary results. |
 
-Recovery reuses the original decision pool. It excludes overlaps with primary
-results and protected lexical cues, and makes no additional model requests.
-Lexical protection does not infer application logic or preferences.
+NMS means non-maximum suppression. Candidates are considered by descending score;
+ties use ascending start offset, end offset, then candidate ID. Partial overlaps
+without full containment are not suppressed. Intersection over union (IoU) is
+recorded in the suppression trace but is not a selection threshold.
+
+Recovery reuses the original decision pool. Eligible gaps exclude primary results
+and protected lexical cues, are at least two characters long, and contain at least
+one character that is neither whitespace, punctuation, nor a symbol. A recovered
+candidate must fit entirely inside one such gap. No additional model requests are
+made. Lexical protection matches configured standalone cues such as `不要` and `或`
+at non-word or text boundaries; it does not interpret application logic or preferences.
+
+Internal configuration IDs `CN90` and `CN90_GAP80_V1`, and the public metadata ID
+`CONFIDENCE_90_GAP_80`, remain stable for serialization and traceability. They refer
+to the primary selection and combined recovery rules above, not separate models.
 
 See [selection.py](../resolution/selection.py) and [recovery.py](../resolution/recovery.py)
 for the exact policy. Changes to these rules need corresponding tests.

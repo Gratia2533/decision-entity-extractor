@@ -1,7 +1,7 @@
 <p align="center">
   <img src="docs/assets/entity-raccoon.png" width="180" alt="A raccoon extracting a golden text fragment from a paper ribbon">
 </p>
-<h1 align="center">decision-entity-extractor</h1>
+<h1 align="center">Decision Entity Extractor</h1>
 <p align="center">Extract the entities you define, with their exact place in the text.</p>
 <p align="center">
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB?style=flat" alt="Python 3.12 | 3.13"></a>
@@ -31,7 +31,7 @@ original text; the tool does not map mentions to catalog IDs.
 
 - Define entity types with your own names and descriptions.
 - Extract candidate spans, then classify them with a decision model.
-- Filter by confidence, suppress contained spans with NMS, and recover missed spans in gaps.
+- Filter by confidence, suppress contained spans with non-maximum suppression (NMS), and recover missed spans in gaps.
 - Use the same resolver through the CLI, Python, or HTTP.
 
 ## Quick start
@@ -94,6 +94,10 @@ flowchart TB
 - Your schema guides candidate extraction and classification.
 - NMS suppresses same-label contained spans. Gap recovery reuses existing scores,
   applies a lower threshold, and runs NMS again without another model call.
+
+See [selection and recovery rules](docs/customization.md#selection-and-recovery)
+for thresholds and tie handling, and [model files](docs/usage.md#model-files)
+for the bundled candidate models.
 
 ## Documentation
 

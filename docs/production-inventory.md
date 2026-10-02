@@ -1,11 +1,12 @@
-# Production runtime and file inventory
+# Runtime architecture and file inventory
 
-This inventory records the approved M3–M5 implementation and its verified local
-evidence. It describes runtime ownership and file boundaries; it does not claim
-general production readiness.
+This inventory describes the entity extraction runtime, module responsibilities,
+pinned model artifacts, and verification coverage. For setup and commands, see
+[Usage](usage.md); for selection rules and extension points, see
+[Customization](customization.md).
 
-Approved implementation:
-M3-M5-2e29436c78c1223453af18ff87c87943752212bd6d4ea62ebe41340fe08d3e6f
+The documented local checks do not establish deployment readiness, service-level
+objectives, or hosted artifact availability.
 
 ## Provisioning and runtime paths
 
@@ -19,7 +20,7 @@ artifact root
   → bootstrap.build_service / build_production_service
   → runtime.resolver.EntityResolver
   → runtime.pipeline.PipelineService
-  → adapters.otter.SelectedCandidateProposer
+  → adapters.otter.proposer.SelectedCandidateProposer
        → adapters.otter.runtime / alignment / artifact
   → adapters.typesafe.provider.TypeSafeDecisionProvider
        → adapters.typesafe.wire
@@ -37,14 +38,14 @@ the explicit check command; `transport.api` owns neither resolver creation nor s
 
 ## Source ownership
 
-| Path | Production responsibility |
+| Path | Responsibility |
 | --- | --- |
 | contracts/models.py | Immutable schema, request/result, span, provenance, conflict, and source identity models. |
 | contracts/errors.py | Typed pipeline errors and safe HTTP/CLI responses. |
 | contracts/interfaces.py | Generic candidate proposer and decision provider boundaries. |
 | contracts/pipeline.py | Candidate/decision snapshots and fixed request budgets. |
-| resolution/selection.py | CN90 raw-probability gate and same-label containment NMS. |
-| resolution/recovery.py | GAP80 same-pool recovery, eligible gap geometry, and lexical cue protection. |
+| resolution/selection.py | Filter raw decision probabilities at 0.90 and suppress same-label contained spans. |
+| resolution/recovery.py | Recover candidates at 0.80 from existing decisions inside eligible uncovered intervals, respecting protected lexical cues. |
 | resolution/annotation.py | Surface annotation and normalized mention projection. |
 | resolution/entities.py | Final entities, provenance, exact-span conflicts, and output contract. |
 | runtime/resolver.py | Public resolver facade and result metadata projection. |
@@ -52,10 +53,10 @@ the explicit check command; `transport.api` owns neither resolver creation nor s
 | runtime/cache.py | Bounded success cache implementation. |
 | runtime/config.py | Cache/admission constants and JSON schema loader. |
 | runtime/telemetry.py | Safe completion telemetry. |
-| adapters/otter/proposer.py | CM/BM fixed union and model worker ownership. |
+| adapters/otter/proposer.py | Merge Otter cross-encoder and bi-encoder candidates by exact span boundaries; own model workers. |
 | adapters/otter/runtime.py | CPU float32 Otter load, warmup, inference, and span decoding. |
 | adapters/otter/alignment.py | Token/character offset alignment. |
-| adapters/otter/artifact.py | Frozen manifest, pin, file, symlink, and checksum validation. |
+| adapters/otter/artifact.py | Validate manifests, pinned revisions, required files, symlink boundaries, and checksums. |
 | adapters/otter/provisioning.py | Hub-cache download, allowlisted staging copy, manifest validation, and atomic publish. |
 | adapters/otter/contracts.py | Otter candidate and inference contracts. |
 | adapters/typesafe/provider.py | TypeSafe SDK lifecycle, timeout, warmup, and safe failure mapping. |
@@ -68,15 +69,23 @@ the explicit check command; `transport.api` owns neither resolver creation nor s
 | config/schema.example.json | Neutral PERSON/ORGANIZATION/PLACE schema. |
 | examples/resolve.py | Runnable injected composition example. |
 
-## Frozen model and artifact contract
+## Pinned models and artifact validation
 
-CM is whoisjones/otter-cross-mmbert, cross encoder, revision
-8729188e4f5fc7948d0e9dfd7d7e6d36c2e7270d, threshold 0.04, with a
-1,235,084,300-byte weight. BM is whoisjones/otter-bi-mmbert, bi encoder, revision
-53e10a09bc71a2e45980a7a257233a28305a5777, threshold 0.05, with a
-1,906,302,124-byte weight. Both use mmBERT, 1024 sequence tokens, and 30 span
-tokens. BM's runtime tokenizer is jhu-clsp/mmBERT-base revision
-c5955035435e2bf121cde7f3c8863ef52ff35d82.
+| Source key | Model | Architecture | Candidate threshold | Weight bytes |
+| --- | --- | --- | --- | ---: |
+| `CM` | [whoisjones/otter-cross-mmbert](https://huggingface.co/whoisjones/otter-cross-mmbert) | Cross-encoder | ≥ 0.04 | 1,235,084,300 |
+| `BM` | [whoisjones/otter-bi-mmbert](https://huggingface.co/whoisjones/otter-bi-mmbert) | Bi-encoder | ≥ 0.05 | 1,906,302,124 |
+
+`CM` and `BM` are stable source keys used in manifests and result provenance.
+The cross-encoder encodes type descriptions and text together; the bi-encoder
+encodes them separately. Both use an mmBERT text encoder and accept at most 1024
+sequence tokens and 30 tokens per span. The bi-encoder's runtime tokenizer is
+`jhu-clsp/mmBERT-base`. Exact revisions and checksums are defined in
+[model_specs.py](../model_specs.py).
+
+Candidate scores determine which spans reach the decision provider. The later
+0.90 primary-selection and 0.80 recovery thresholds apply to decision
+probabilities, as described in [selection and recovery](customization.md#selection-and-recovery).
 
 Provisioning downloads only required checkpoint/code/config/tokenizer files from
 the pinned revisions, copies regular bytes from the Hub cache, validates all
@@ -99,27 +108,22 @@ service owner handles closure. Validation is 422; service readiness, admission, 
 provider configuration are 503; candidate/provider failure is 502; provider timeout
 is 504. CLI errors are safe JSON on stderr with nonzero exit status.
 
-## Tests and verified evidence
+## Verification coverage
 
 Tests mirror production ownership under tests/contracts/, tests/resolution/,
-tests/runtime/, tests/adapters/, tests/transport/, and tests/packaging/. The M3
-provisioning suite covers exact pins and allowlists, full manifest validation,
+tests/runtime/, tests/adapters/, tests/transport/, and tests/packaging/. The model
+provisioning tests cover exact pins and allowlists, full manifest validation,
 healthy reuse, damaged-target preservation, staging and interruption cleanup,
 symlink dereference, regular-file enforcement, cache/network failure redaction,
-competing-target preservation, and partial CM/BM completion.
+competing-target preservation, and reuse of a completed checkpoint when the other
+model's download fails.
 
-The implementation passed 122 tests, Ruff check/format, uv lock --check, wheel and
-sdist build, installed-wheel smoke outside the checkout, and tracked/untracked
-whitespace checks. Delegated OCR reviewed 6/6 reviewable changes with no blockers.
-The final graph review used revision 2026-10-01T18:01:09 with head_matches_build=true;
-provisioning.py has required_checkpoint_files, _snapshot, _copy_files, and
-download_artifacts nodes, and transport.cli.main calls download_artifacts.
+Run the [developer checks](customization.md#developer-checks) for tests, lint,
+formatting, lock consistency, package builds, and whitespace validation. The
+packaging tests check that core imports do not load optional model/provider SDKs
+or create background threads, and that model pins cannot be mutated.
 
-Real local evidence includes successful CLI download/check/reuse, 12 CM and 17 BM
-FULL_SHA256 files, and offline CPU float32 CM/BM load, warmup, four exact-span
-candidate proposals, and close. A live CLI resolve also completed with TypeSafe model
-`jev-1.13.0`, returning Alice PERSON [0, 5), Acme ORGANIZATION [15, 19), and Taipei
-PLACE [23, 29) without warnings. An injected FastAPI TestClient returned readiness 200,
-the same English result, the Chinese sample with exact spans for 王小明、台北、台積電,
-an empty result with NO_ENTITY_EVIDENCE, and HTTP 422 for a blank request. These local
-checks do not establish production readiness or hosted deployment behavior.
+To verify actual model files, follow [download and check commands](usage.md#model-files).
+Live inference additionally requires local model loading and a TypeSafe request
+using the [CLI, Python, or HTTP examples](usage.md). Passing unit tests alone does
+not verify model downloads, live provider availability, or deployment behavior.

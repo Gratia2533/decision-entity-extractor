@@ -38,6 +38,19 @@ uv run --no-sync entity-resolver resolve --artifact-root .local-artifacts --sche
 
 ## 模型檔案
 
+內建候選模型為 Otter 多語言實體辨識模型。以下固定來源識別值會出現在 CLI 輸出、
+manifest 與結果的來源資訊中：
+
+| 來源識別值 | 模型 | 架構 | 候選分數門檻 |
+| --- | --- | --- | --- |
+| `CM` | [whoisjones/otter-cross-mmbert](https://huggingface.co/whoisjones/otter-cross-mmbert) | Cross-encoder：將類別描述與文字一起編碼 | ≥ 0.04 |
+| `BM` | [whoisjones/otter-bi-mmbert](https://huggingface.co/whoisjones/otter-bi-mmbert) | Bi-encoder：分別編碼文字與類別描述 | ≥ 0.05 |
+
+兩個模型皆使用 mmBERT 文字編碼器。本專案 adapter 將 schema 的類別描述作為模型的
+類別輸入，合併字元邊界相同的候選，並保留各模型分數。上表為本專案的候選門檻，
+並非上游模型的預設預測門檻。後續[篩選與撈回](customization.zh-TW.md#篩選與撈回)
+使用的 0.90 與 0.80 門檻，則作用於 TypeSafe 回傳的決策機率。
+
 ```bash
 uv run --no-sync entity-resolver identities
 uv run --no-sync entity-resolver download --artifact-root .local-artifacts
@@ -121,6 +134,10 @@ curl -sS -X POST http://127.0.0.1:8000/resolve \
 | `entities[].resolution_status` / `conflict` | 擷取狀態與同一區間的類別衝突 |
 | `warnings` | 未找到實體時包含 `NO_ENTITY_EVIDENCE` |
 | `metadata` | Schema、策略、模型、提示詞與執行時間資訊 |
+
+`metadata.policy_id` 的值為 `CONFIDENCE_90_GAP_80`，代表以 0.90 進行主要篩選，
+再以 0.80 從合格空缺補回候選，並套用同類別包含關係 NMS。這是固定的機器識別值，
+完整規則請見客製化指南。候選來源的 `source_id` 值 `CM`、`BM` 對應上表的模型。
 
 CLI 結果寫入 stdout；失敗時將 JSON 錯誤寫入 stderr，並回傳非零結束碼。
 
