@@ -1,4 +1,4 @@
-"""Clone-oriented commands with explicit service ownership."""
+"""CLI commands for model provisioning, verification, extraction, and HTTP serving."""
 
 from __future__ import annotations
 

@@ -16,6 +16,8 @@ class SpanCandidate:
     end: int
     mention: str
     score: float
+    # Entity label descriptions supplied as type inputs to the candidate model.
+    # Records which descriptions produced this span, including after deduplication.
     probes: tuple[str, ...] = ()
 
     @classmethod

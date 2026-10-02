@@ -1,4 +1,4 @@
-"""Safe completion telemetry with no query surfaces or provider bodies."""
+"""Log completion metrics without raw query text or provider response bodies."""
 
 import logging
 

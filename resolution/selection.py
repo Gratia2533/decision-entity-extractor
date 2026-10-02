@@ -19,6 +19,7 @@ SETTINGS = (("CN90", 0.90, 0.0),)
 class PostprocessConfig(FrozenModel):
     schema_version: Literal["entity-selection-config-v1"] = "entity-selection-config-v1"
     policy_id: str
+    # Tau denotes the minimum accepted decision probability (confidence threshold).
     confidence_tau: Probability | None
     min_score_gap: Probability | None
 
@@ -90,7 +91,7 @@ class PostprocessResult(FrozenModel):
             else set()
         )
         if confidence_ids != expected_confidence_ids:
-            raise ValueError("confidence trace must remove exactly scores below tau")
+            raise ValueError("confidence trace must remove exactly scores below the threshold")
         if loser_ids != set(after_confidence) - set(after):
             raise ValueError("NMS trace does not cover exactly its removed predictions")
         if len(confidence_ids) != len(self.confidence_decisions):

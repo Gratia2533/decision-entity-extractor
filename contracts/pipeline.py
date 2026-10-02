@@ -14,6 +14,7 @@ Index = Annotated[int, Field(strict=True, ge=0)]
 Probability = Annotated[float, Field(strict=True, ge=0, le=1, allow_inf_nan=False)]
 
 
+# Request-construction version included in the decision cache key.
 REQUEST_BUILDER_VERSION = "decision-v1"
 
 
@@ -58,6 +59,8 @@ class CompareSnapshot(FrozenModel):
     """Validated input text, schema, and candidate pool sent for decision scoring."""
 
     schema_version: Literal["entity-candidate-snapshot-v1"] = "entity-candidate-snapshot-v1"
+    # Correlates a snapshot with its decisions and selection results. The bundled
+    # proposer reuses q000 for each request; this is not a globally unique request ID.
     case_id: str = Field(pattern=r"^q[0-9]{3}$")
     raw_text: str = Field(min_length=1)
     entity_schema: EntitySchema

@@ -18,6 +18,7 @@ from contracts.pipeline import (
 )
 from hashing import content_sha256
 
+# TypeSafe API model used to classify candidate spans and return label probabilities.
 MODEL = "jev-1.13.0"
 
 _QUESTION = (

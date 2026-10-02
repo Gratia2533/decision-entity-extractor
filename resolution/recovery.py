@@ -37,6 +37,9 @@ class RecoveryConfig(FrozenModel):
     max_selection_passes: Literal[2] = 2
     min_score_gap: Literal[0.0] = 0.0
     operator_rule_version: Literal["standalone-operator-cues-v1"] = OPERATOR_RULE_VERSION
+    # Stable rule ID: use Unicode code-point offsets to find uncovered intervals;
+    # require the minimum length and at least one character that is neither
+    # whitespace, punctuation, nor a symbol.
     gap_rule_version: Literal["codepoint-complement-nonseparator-v1"] = (
         "codepoint-complement-nonseparator-v1"
     )
@@ -60,6 +63,8 @@ class Interval(FrozenModel):
 class ProtectedInterval(Interval):
     mention: str
     rule_id: Literal["standalone-operator-cues-v1"] = OPERATOR_RULE_VERSION
+    # Cue boundaries must be text edges or characters outside Unicode \w
+    # (alphanumeric characters and underscore), as checked by _OPERATOR.
     basis: Literal["non-word-or-query-boundaries"] = "non-word-or-query-boundaries"
 
 
